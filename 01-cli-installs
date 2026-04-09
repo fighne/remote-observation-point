@@ -1,4 +1,3 @@
 sudo apt update
 # the following line might take some time!
-sudo apt full-upgrade -y
-sudo apt install git mc 
+sudo apt full-upgrade -y 
