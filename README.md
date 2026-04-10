@@ -6,8 +6,8 @@ Initially using Python then moving to Common Lisp (SBCL).
 2. platform is Raspberry Pi B 256MB
 3. Strinity Sensors Cobber v0.1 - TLS256, BMP180, AM2321
 4. BME280
-5. GY-271
-6. VL6180X
+5. GY-271 - https://github.com/jposada202020/CircuitPython_qmc5883l/tree/master
+6. VL6180X - https://github.com/adafruit/Adafruit_CircuitPython_VL6180X/tree/main
 7. PCA9685 (Waveshare Servo Driver Hat)
 8. AM2302 - external temperature and humdity
 9. Raspberry Pi NOIR Camera
