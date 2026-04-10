@@ -6,7 +6,7 @@ Initially using Python then moving to Common Lisp (SBCL).
 2. platform is Raspberry Pi B 256MB
 3. Strinity Sensors Cobber v0.1 -
 - a)TLS2561 - https://github.com/adafruit/Adafruit_CircuitPython_TSL2561
-- b)BMP180
+- b)BMP180 - https://github.com/jposada202020/CircuitPython_BMP180
 - c)AM2321
 4. BME280 - https://github.com/adafruit/Adafruit_CircuitPython_BME280
 5. GY-271 - https://github.com/jposada202020/CircuitPython_qmc5883l/tree/master
