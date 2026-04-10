@@ -12,5 +12,6 @@ Initially using Python then moving to Common Lisp (SBCL).
 8. AM2302 - external temperature and humdity
 9. Raspberry Pi NOIR Camera
 
-nb - raspbian comes pre-installed with Python 3
-nb - bme280 = adafruit_bme280.Adafruit_BME280_I2C(i2c, address=0x76) <= if using none Adafruit BME280 board
+.nb - raspbian comes pre-installed with Python 3
+
+.nb - bme280 = adafruit_bme280.Adafruit_BME280_I2C(i2c, address=0x76) <= if using none Adafruit BME280 board
