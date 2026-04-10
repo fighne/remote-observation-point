@@ -11,7 +11,7 @@ Initially using Python then moving to Common Lisp (SBCL).
 4. BME280 - https://github.com/adafruit/Adafruit_CircuitPython_BME280
 5. GY-271 - https://github.com/jposada202020/CircuitPython_qmc5883l/tree/master
 6. VL6180X - https://github.com/adafruit/Adafruit_CircuitPython_VL6180X/tree/main
-7. PCA9685 (Waveshare Servo Driver Hat)
+7. PCA9685 (Waveshare Servo Driver Hat) => using Adafruit - https://github.com/adafruit/Adafruit_CircuitPython_PCA9685
 8. AM2302 - external temperature and humdity
 9. Raspberry Pi NOIR Camera
 
