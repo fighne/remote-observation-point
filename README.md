@@ -9,8 +9,8 @@ Initially using Python then moving to Common Lisp (SBCL).
 - b)BMP180 - https://github.com/jposada202020/CircuitPython_BMP180
 - c)AM2321 - https://github.com/adafruit/Adafruit_CircuitPython_AM2320 <= mine not working :(
 4. BME280 - https://github.com/adafruit/Adafruit_CircuitPython_BME280
-5. GY-271 - https://github.com/jposada202020/CircuitPython_qmc5883l/tree/master
-6. VL6180X - https://github.com/adafruit/Adafruit_CircuitPython_VL6180X/tree/main
+5. GY-271 - https://github.com/jposada202020/CircuitPython_qmc5883l
+6. VL6180X - https://github.com/adafruit/Adafruit_CircuitPython_VL6180X
 7. PCA9685 (Waveshare Servo Driver Hat) => using Adafruit - https://github.com/adafruit/Adafruit_CircuitPython_PCA9685
 8. AM2302 - external temperature and humdity - https://github.com/adafruit/Adafruit_CircuitPython_DHT
 9. Raspberry Pi NOIR Camera
