@@ -1,8 +1,8 @@
 # remote development scripts
 
-.SRC-DIR = $(dirname $PWD)/src
-.$USER # username
-.$REMOTE-UNIT = <IP Address>
+1. SRC-DIR = $(dirname $PWD)/src
+2. $USER # username
+3. $REMOTE-UNIT = <IP Address>
 
 ## commands
 
