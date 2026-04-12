@@ -18,3 +18,12 @@ Initially using Python then moving to Common Lisp (SBCL).
 .nb - raspbian comes pre-installed with Python 3
 
 .nb - bme280 = adafruit_bme280.Adafruit_BME280_I2C(i2c, address=0x76) <= if using none Adafruit BME280 board
+
+## Development Tools
+SSH all the way!
+1. For GitHub - https://docs.github.com/en/authentication/connecting-to-github-with-ssh
+2. WorkStation holds the repo, therefore no need to git to be loaded on the the remote machine
+3. Rsync - usually installed on Linux but not all BSD's is it installed by default
+4. A code writing environment (whatever takes your fancy mines Emacs)
+5. Couple of bash scripts wrapped around Rsync and SSH
+
