@@ -2,3 +2,5 @@
 2. using the above function create a scanning function where the x axis is servo 0 and the Y axis is servo 1
 3. adding to this function I want to read the output of a qmc5883l sensor using the adafruit circuit python library qmc5883l at every position step
 4. adding to the above function the readings from VL6180X sensor using the CircuitPython library module for the VL6180X distance sensor at each servo step.
+nb. module issue pip3 install circuitpython-qmc5883l installed and code modified
+
