@@ -1,0 +1,224 @@
+```python
+import board
+import busio
+import time
+from adafruit_pca9685 import PCA9685
+from adafruit_motor import servo
+import adafruit_qmc5883l
+
+# Initialize I2C and PCA9685
+i2c = busio.I2C(board.SCL, board.SDA)
+pca = PCA9685(i2c)
+pca.frequency = 50
+
+# Initialize QMC5883L magnetometer on same I2C bus
+sensor = adafruit_qmc5883l.QMC5883L(i2c)
+
+servos = [servo.Servo(pca.channels[i]) for i in range(16)]
+
+
+def set_servo(channel: int, position: int) -> None:
+    if not 0 <= channel <= 15:
+        raise ValueError(f"Channel must be 0–15, got {channel}")
+    if not 0 <= position <= 180:
+        raise ValueError(f"Position must be 0–180 degrees, got {position}")
+    servos[channel].angle = position
+
+
+def read_magnetometer(samples: int = 5) -> dict:
+    """
+    Read and average multiple samples from the QMC5883L.
+
+    Args:
+        samples (int): Number of readings to average (reduces noise)
+
+    Returns:
+        dict: Averaged x, y, z magnetic field values (microteslas) and heading (degrees)
+    """
+    readings = {"x": [], "y": [], "z": []}
+
+    for _ in range(samples):
+        mx, my, mz = sensor.magnetic
+        readings["x"].append(mx)
+        readings["y"].append(my)
+        readings["z"].append(mz)
+        time.sleep(0.01)  # Small delay between samples
+
+    avg_x = sum(readings["x"]) / samples
+    avg_y = sum(readings["y"]) / samples
+    avg_z = sum(readings["z"]) / samples
+
+    # Calculate heading from x/y field components
+    import math
+    heading = math.atan2(avg_y, avg_x) * (180 / math.pi)
+    if heading < 0:
+        heading += 360
+
+    return {
+        "x": round(avg_x, 4),
+        "y": round(avg_y, 4),
+        "z": round(avg_z, 4),
+        "heading": round(heading, 2)
+    }
+
+
+def scan(
+    x_min: int = 0,
+    x_max: int = 180,
+    y_min: int = 0,
+    y_max: int = 180,
+    step: int = 10,
+    dwell_time: float = 0.2,
+    samples: int = 5,
+    pattern: str = "boustrophedon",
+    callback=None
+) -> list:
+    """
+    Scan across X/Y axes using servo 0 (X) and servo 1 (Y),
+    reading the QMC5883L magnetometer at every position.
+
+    Args:
+        x_min       (int):   Minimum X angle in degrees (0–180)
+        x_max       (int):   Maximum X angle in degrees (0–180)
+        y_min       (int):   Minimum Y angle in degrees (0–180)
+        y_max       (int):   Maximum Y angle in degrees (0–180)
+        step        (int):   Degree increment per move
+        dwell_time  (float): Seconds to pause before reading sensor
+        samples     (int):   Magnetometer samples to average per position
+        pattern     (str):   'boustrophedon' (snake) or 'raster' (reset X each row)
+        callback    (func):  Optional function called at each position with
+                             signature: callback(x_angle, y_angle, mag_data)
+
+    Returns:
+        list[dict]: All scan results with position and magnetic field data
+    """
+    X_CHANNEL = 0
+    Y_CHANNEL = 1
+
+    if not (0 <= x_min < x_max <= 180):
+        raise ValueError("Invalid X range")
+    if not (0 <= y_min < y_max <= 180):
+        raise ValueError("Invalid Y range")
+    if step <= 0:
+        raise ValueError("Step must be positive")
+
+    y_positions = list(range(y_min, y_max + 1, step))
+    x_positions = list(range(x_min, x_max + 1, step))
+    total_points = len(x_positions) * len(y_positions)
+    results = []
+
+    print(f"Starting scan | X: {x_min}–{x_max}° | Y: {y_min}–{y_max}° | Step: {step}°")
+    print(f"Pattern: {pattern} | Points: {total_points} | Samples/point: {samples}\n")
+    print(f"{'Point':<8}{'X':>6}{'Y':>6}{'Mag X':>12}{'Mag Y':>12}{'Mag Z':>12}{'Heading':>10}")
+    print("-" * 66)
+
+    point_count = 0
+
+    for row_idx, y_angle in enumerate(y_positions):
+
+        current_x_positions = (
+            x_positions if row_idx % 2 == 0 else list(reversed(x_positions))
+        ) if pattern == "boustrophedon" else x_positions
+
+        set_servo(Y_CHANNEL, y_angle)
+        time.sleep(dwell_time)  # Let Y axis settle before sweeping X
+
+        for x_angle in current_x_positions:
+            set_servo(X_CHANNEL, x_angle)
+
+            # Wait for servo to settle before reading
+            time.sleep(dwell_time)
+
+            # Read magnetometer
+            mag_data = read_magnetometer(samples=samples)
+
+            # Store result with full context
+            result = {
+                "point":   point_count,
+                "x_angle": x_angle,
+                "y_angle": y_angle,
+                "mag_x":   mag_data["x"],
+                "mag_y":   mag_data["y"],
+                "mag_z":   mag_data["z"],
+                "heading": mag_data["heading"]
+            }
+            results.append(result)
+            point_count += 1
+
+            print(
+                f"{point_count:<8}"
+                f"{x_angle:>5}°"
+                f"{y_angle:>5}°"
+                f"{mag_data['x']:>12.4f}"
+                f"{mag_data['y']:>12.4f}"
+                f"{mag_data['z']:>12.4f}"
+                f"{mag_data['heading']:>9.2f}°"
+            )
+
+            if callback:
+                callback(x_angle, y_angle, mag_data)
+
+    # Return to home
+    print(f"\nScan complete — {point_count} points captured. Returning to home.")
+    set_servo(X_CHANNEL, x_min)
+    set_servo(Y_CHANNEL, y_min)
+
+    return results
+```
+
+---
+
+## Usage Examples
+
+```python
+# Basic scan — returns all results as a list of dicts
+results = scan()
+
+# Fine-resolution scan of a narrow region
+results = scan(x_min=45, x_max=135, y_min=60, y_max=120, step=5, samples=10)
+
+# Use a callback to log anomalies in real-time
+def alert_on_spike(x, y, mag):
+    if abs(mag["z"]) > 100:
+        print(f"  ⚠ Spike detected at X:{x}° Y:{y}° → Z: {mag['z']} µT")
+
+results = scan(step=15, callback=alert_on_spike)
+
+# Save results to CSV for analysis
+import csv
+results = scan(step=10)
+
+with open("scan_results.csv", "w", newline="") as f:
+    writer = csv.DictWriter(f, fieldnames=results[0].keys())
+    writer.writeheader()
+    writer.writerows(results)
+    print("Results saved to scan_results.csv")
+```
+
+---
+
+## Output Example
+
+```
+Starting scan | X: 0–180° | Y: 0–180° | Step: 10°
+Pattern: boustrophedon | Points: 361 | Samples/point: 5
+
+Point      X      Y       Mag X       Mag Y       Mag Z   Heading
+------------------------------------------------------------------
+1         0°    0°     -23.1400     12.4500     45.2300    151.74°
+2        10°    0°     -22.8900     13.1200     44.9800    150.23°
+3        20°    0°     -20.4400     15.6700     43.1200    142.60°
+...
+```
+
+---
+
+## Key Design Decisions
+
+| Feature | Detail |
+|---|---|
+| **Shared I2C bus** | PCA9685 and QMC5883L both run on the same `busio.I2C` instance |
+| **Averaged samples** | Multiple reads per position reduce sensor noise |
+| **Y settles before X sweep** | Prevents cross-axis mechanical vibration during reads |
+| **`dwell_time` before read** | Ensures servo has physically stopped before sampling |
+| **Returns full result list** | Enables post-scan analysis, CSV export, or heatmap plotting |
