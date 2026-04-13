@@ -1,0 +1,139 @@
+Here's a scanning function that sweeps both axes systematically:
+
+```python
+import board
+import busio
+import time
+from adafruit_pca9685 import PCA9685
+from adafruit_motor import servo
+
+# Initialize I2C and PCA9685
+i2c = busio.I2C(board.SCL, board.SDA)
+pca = PCA9685(i2c)
+pca.frequency = 50
+
+servos = [servo.Servo(pca.channels[i]) for i in range(16)]
+
+def set_servo(channel: int, position: int) -> None:
+    if not 0 <= channel <= 15:
+        raise ValueError(f"Channel must be 0–15, got {channel}")
+    if not 0 <= position <= 180:
+        raise ValueError(f"Position must be 0–180 degrees, got {position}")
+    servos[channel].angle = position
+
+
+def scan(
+    x_min: int = 0,
+    x_max: int = 180,
+    y_min: int = 0,
+    y_max: int = 180,
+    step: int = 10,
+    dwell_time: float = 0.1,
+    pattern: str = "boustrophedon",
+    callback=None
+) -> None:
+    """
+    Scan across X/Y axes using servo 0 (X) and servo 1 (Y).
+
+    Args:
+        x_min         (int):   Minimum X angle in degrees (0–180)
+        x_max         (int):   Maximum X angle in degrees (0–180)
+        y_min         (int):   Minimum Y angle in degrees (0–180)
+        y_max         (int):   Maximum Y angle in degrees (0–180)
+        step          (int):   Degree increment per move
+        dwell_time  (float):   Seconds to pause at each position
+        pattern       (str):   'boustrophedon' (snake) or 'raster' (reset X each row)
+        callback     (func):   Optional function called at each position
+                               with signature: callback(x_angle, y_angle)
+    """
+    X_CHANNEL = 0
+    Y_CHANNEL = 1
+
+    if not (0 <= x_min < x_max <= 180):
+        raise ValueError("Invalid X range")
+    if not (0 <= y_min < y_max <= 180):
+        raise ValueError("Invalid Y range")
+    if step <= 0:
+        raise ValueError("Step must be positive")
+
+    y_positions = list(range(y_min, y_max + 1, step))
+    x_positions = list(range(x_min, x_max + 1, step))
+
+    print(f"Starting scan | X: {x_min}–{x_max}° | Y: {y_min}–{y_max}° | Step: {step}°")
+    print(f"Pattern: {pattern} | Points: {len(x_positions) * len(y_positions)}\n")
+
+    for row_idx, y_angle in enumerate(y_positions):
+
+        # Boustrophedon: alternate X direction each row (snake scan)
+        # Raster: always sweep X left to right
+        current_x_positions = (
+            x_positions if row_idx % 2 == 0 else reversed(x_positions)
+        ) if pattern == "boustrophedon" else x_positions
+
+        set_servo(Y_CHANNEL, y_angle)
+
+        for x_angle in current_x_positions:
+            set_servo(X_CHANNEL, x_angle)
+            time.sleep(dwell_time)
+
+            if callback:
+                callback(x_angle, y_angle)
+
+            print(f"  X: {x_angle:>3}°  Y: {y_angle:>3}°")
+
+    # Return to home position after scan completes
+    print("\nScan complete. Returning to home position.")
+    set_servo(X_CHANNEL, x_min)
+    set_servo(Y_CHANNEL, y_min)
+```
+
+---
+
+## Scan Patterns Explained
+
+**Boustrophedon (snake) — default, most efficient:**
+```
+Y=0  →  →  →  →  →  (X: 0 to 180)
+Y=10 ←  ←  ←  ←  ←  (X: 180 to 0)
+Y=20 →  →  →  →  →  (X: 0 to 180)
+```
+
+**Raster — always left to right:**
+```
+Y=0  →  →  →  →  →  (X: 0 to 180, reset)
+Y=10 →  →  →  →  →  (X: 0 to 180, reset)
+Y=20 →  →  →  →  →  (X: 0 to 180, reset)
+```
+
+---
+
+## Usage Examples
+
+```python
+# Basic full-range scan
+scan()
+
+# Narrow region scan with fine step
+scan(x_min=45, x_max=135, y_min=60, y_max=120, step=5)
+
+# Raster pattern with longer dwell per point
+scan(pattern="raster", dwell_time=0.5)
+
+# With a callback — e.g. trigger a sensor reading at each point
+def read_sensor(x, y):
+    print(f"  → Reading sensor at ({x}°, {y}°)")
+
+scan(x_min=0, x_max=90, step=15, callback=read_sensor)
+```
+
+---
+
+## Key Design Decisions
+
+| Feature | Reason |
+|---|---|
+| **Boustrophedon default** | Minimises servo travel — no wasted return sweep |
+| **`dwell_time`** | Lets mechanics settle before a reading/callback |
+| **`callback` hook** | Cleanly decouples scanning from sensor logic |
+| **Home on complete** | Returns to a predictable resting position |
+| **Configurable range** | Prevents scanning beyond safe mechanical limits |
