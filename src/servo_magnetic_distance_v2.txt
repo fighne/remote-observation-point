@@ -1,0 +1,312 @@
+The `qmc5883l` community library has a different API from the Adafruit one. Here are the key changes:
+
+| | `adafruit_qmc5883l` | `qmc5883l` |
+|---|---|---|
+| **Import** | `import adafruit_qmc5883l` | `import qmc5883l` |
+| **Init** | `QMC5883L(i2c)` | `QMC5883L(i2c)` |
+| **Read** | `sensor.magnetic` → `(x, y, z)` | `sensor.get_magnet()` → `(x, y, z)` |
+| **Install** | built-in Adafruit bundle | `circup install qmc5883l` |
+
+Here's the modified code with all changes highlighted in the comments:
+
+```python
+import board
+import busio
+import time
+import math
+import csv
+from adafruit_pca9685 import PCA9685
+from adafruit_motor import servo
+import qmc5883l                          # CHANGED: from adafruit_qmc5883l
+import adafruit_vl6180x
+
+# Initialize I2C bus (shared across all devices)
+i2c = busio.I2C(board.SCL, board.SDA)
+
+# Initialize PCA9685 PWM driver
+pca = PCA9685(i2c)
+pca.frequency = 50
+
+# CHANGED: qmc5883l init and configuration
+magnetometer = qmc5883l.QMC5883L(i2c)
+magnetometer.output_data_rate = qmc5883l.ODR_200HZ   # 10 / 50 / 100 / 200 Hz
+magnetometer.output_data_range = qmc5883l.RNG_8G     # 2G / 8G
+magnetometer.oversampling_rate = qmc5883l.OSR_512    # 64 / 128 / 256 / 512
+
+# Initialize VL6180X distance + ambient light sensor
+distance_sensor = adafruit_vl6180x.VL6180X(i2c)
+
+# Create servo objects for all 16 channels
+servos = [servo.Servo(pca.channels[i]) for i in range(16)]
+
+
+# ---------------------------------------------------------------------------
+# Servo Control
+# ---------------------------------------------------------------------------
+
+def set_servo(channel: int, position: int) -> None:
+    """
+    Set a servo to a given angle.
+
+    Args:
+        channel  (int): PCA9685 channel (0–15)
+        position (int): Angle in degrees (0–180)
+    """
+    if not 0 <= channel <= 15:
+        raise ValueError(f"Channel must be 0–15, got {channel}")
+    if not 0 <= position <= 180:
+        raise ValueError(f"Position must be 0–180 degrees, got {position}")
+    servos[channel].angle = position
+
+
+# ---------------------------------------------------------------------------
+# Sensor Readers
+# ---------------------------------------------------------------------------
+
+def read_magnetometer(samples: int = 5) -> dict:
+    """
+    Average multiple QMC5883L readings to reduce noise.
+
+    Args:
+        samples (int): Number of readings to average
+
+    Returns:
+        dict: Averaged x, y, z (µT) and heading (degrees)
+    """
+    readings = {"x": [], "y": [], "z": []}
+
+    for _ in range(samples):
+        mx, my, mz = magnetometer.get_magnet()      # CHANGED: .magnetic → .get_magnet()
+        readings["x"].append(mx)
+        readings["y"].append(my)
+        readings["z"].append(mz)
+        time.sleep(0.01)
+
+    avg_x = sum(readings["x"]) / samples
+    avg_y = sum(readings["y"]) / samples
+    avg_z = sum(readings["z"]) / samples
+    heading = math.atan2(avg_y, avg_x) * (180 / math.pi)
+    if heading < 0:
+        heading += 360
+
+    return {
+        "mag_x":   round(avg_x, 4),
+        "mag_y":   round(avg_y, 4),
+        "mag_z":   round(avg_z, 4),
+        "heading": round(heading, 2)
+    }
+
+
+def read_distance(samples: int = 5) -> dict:
+    """
+    Average multiple VL6180X readings to reduce noise.
+
+    Args:
+        samples (int): Number of readings to average
+
+    Returns:
+        dict: Averaged distance (mm), ambient light (lux), and status
+    """
+    distances = []
+    lux_readings = []
+    status = None
+
+    for _ in range(samples):
+        try:
+            distance = distance_sensor.range
+            lux = distance_sensor.read_lux(adafruit_vl6180x.ALS_GAIN_1)
+            status = distance_sensor.range_status
+
+            if status == adafruit_vl6180x.ERROR_NONE:
+                distances.append(distance)
+                lux_readings.append(lux)
+
+        except RuntimeError as e:
+            print(f"  VL6180X read error: {e}")
+
+        time.sleep(0.01)
+
+    avg_distance = round(sum(distances) / len(distances), 2) if distances else None
+    avg_lux = round(sum(lux_readings) / len(lux_readings), 2) if lux_readings else None
+
+    return {
+        "distance_mm":  avg_distance,
+        "lux":          avg_lux,
+        "range_status": status,
+        "valid_reads":  len(distances)
+    }
+
+
+def read_all_sensors(samples: int = 5) -> dict:
+    """
+    Read both sensors and merge into a single result dict.
+
+    Args:
+        samples (int): Samples to average per sensor
+
+    Returns:
+        dict: Combined magnetometer and distance sensor data
+    """
+    mag  = read_magnetometer(samples=samples)
+    dist = read_distance(samples=samples)
+    return {**mag, **dist}
+
+
+# ---------------------------------------------------------------------------
+# Scan Function
+# ---------------------------------------------------------------------------
+
+def scan(
+    x_min: int = 0,
+    x_max: int = 180,
+    y_min: int = 0,
+    y_max: int = 180,
+    step: int = 10,
+    dwell_time: float = 0.2,
+    samples: int = 5,
+    pattern: str = "boustrophedon",
+    save_csv: str = None,
+    callback=None
+) -> list:
+    """
+    Scan X/Y axes using servo 0 (X) and servo 1 (Y), reading the
+    QMC5883L magnetometer and VL6180X distance sensor at every position.
+
+    Args:
+        x_min      (int):   Minimum X angle in degrees (0–180)
+        x_max      (int):   Maximum X angle in degrees (0–180)
+        y_min      (int):   Minimum Y angle in degrees (0–180)
+        y_max      (int):   Maximum Y angle in degrees (0–180)
+        step       (int):   Degree increment per move
+        dwell_time (float): Seconds to wait after each servo move
+        samples    (int):   Sensor samples to average per position
+        pattern    (str):   'boustrophedon' (snake) or 'raster'
+        save_csv   (str):   Optional filepath to auto-save results as CSV
+        callback   (func):  Optional callback(x_angle, y_angle, sensor_data)
+
+    Returns:
+        list[dict]: All scan results with position and sensor readings
+    """
+    X_CHANNEL = 0
+    Y_CHANNEL = 1
+
+    if not (0 <= x_min < x_max <= 180):
+        raise ValueError("Invalid X range")
+    if not (0 <= y_min < y_max <= 180):
+        raise ValueError("Invalid Y range")
+    if step <= 0:
+        raise ValueError("Step must be positive")
+
+    y_positions  = list(range(y_min, y_max + 1, step))
+    x_positions  = list(range(x_min, x_max + 1, step))
+    total_points = len(x_positions) * len(y_positions)
+    results      = []
+    point_count  = 0
+
+    print(f"\nStarting scan")
+    print(f"  X range  : {x_min}–{x_max}°  |  Y range: {y_min}–{y_max}°")
+    print(f"  Step     : {step}°  |  Pattern: {pattern}")
+    print(f"  Points   : {total_points}  |  Samples/point: {samples}")
+    print(f"  Dwell    : {dwell_time}s\n")
+    print(
+        f"{'#':<6}"
+        f"{'X':>5}"
+        f"{'Y':>5}"
+        f"{'MagX':>10}"
+        f"{'MagY':>10}"
+        f"{'MagZ':>10}"
+        f"{'Heading':>10}"
+        f"{'Dist(mm)':>10}"
+        f"{'Lux':>8}"
+        f"{'Valid':>6}"
+    )
+    print("-" * 80)
+
+    for row_idx, y_angle in enumerate(y_positions):
+
+        current_x = (
+            x_positions if row_idx % 2 == 0 else list(reversed(x_positions))
+        ) if pattern == "boustrophedon" else x_positions
+
+        set_servo(Y_CHANNEL, y_angle)
+        time.sleep(dwell_time)
+
+        for x_angle in current_x:
+            set_servo(X_CHANNEL, x_angle)
+            time.sleep(dwell_time)
+
+            sensor_data = read_all_sensors(samples=samples)
+            point_count += 1
+
+            result = {
+                "point":   point_count,
+                "x_angle": x_angle,
+                "y_angle": y_angle,
+                **sensor_data
+            }
+            results.append(result)
+
+            dist_str = (
+                f"{sensor_data['distance_mm']:>10.2f}"
+                if sensor_data["distance_mm"] is not None
+                else f"{'ERR':>10}"
+            )
+            print(
+                f"{point_count:<6}"
+                f"{x_angle:>4}°"
+                f"{y_angle:>4}°"
+                f"{sensor_data['mag_x']:>10.4f}"
+                f"{sensor_data['mag_y']:>10.4f}"
+                f"{sensor_data['mag_z']:>10.4f}"
+                f"{sensor_data['heading']:>9.2f}°"
+                f"{dist_str}"
+                f"{sensor_data['lux']:>8.2f}"
+                f"{sensor_data['valid_reads']:>6}"
+            )
+
+            if callback:
+                callback(x_angle, y_angle, sensor_data)
+
+    print(f"\nScan complete — {point_count} points captured.")
+    set_servo(X_CHANNEL, x_min)
+    set_servo(Y_CHANNEL, y_min)
+
+    if save_csv and results:
+        with open(save_csv, "w", newline="") as f:
+            writer = csv.DictWriter(f, fieldnames=results[0].keys())
+            writer.writeheader()
+            writer.writerows(results)
+        print(f"Results saved to: {save_csv}")
+
+    return results
+```
+
+---
+
+## Available `qmc5883l` Configuration Options
+
+```python
+# Output Data Rate — how frequently the sensor updates
+magnetometer.output_data_rate = qmc5883l.ODR_10HZ    # Lowest power
+magnetometer.output_data_rate = qmc5883l.ODR_50HZ
+magnetometer.output_data_rate = qmc5883l.ODR_100HZ
+magnetometer.output_data_rate = qmc5883l.ODR_200HZ   # Highest speed
+
+# Field Range — use 2G for weak fields, 8G near strong magnets
+magnetometer.output_data_range = qmc5883l.RNG_2G
+magnetometer.output_data_range = qmc5883l.RNG_8G
+
+# Oversampling Rate — higher = less noise, slower response
+magnetometer.oversampling_rate = qmc5883l.OSR_64
+magnetometer.oversampling_rate = qmc5883l.OSR_128
+magnetometer.oversampling_rate = qmc5883l.OSR_256
+magnetometer.oversampling_rate = qmc5883l.OSR_512    # Best noise rejection
+```
+
+---
+
+## Install
+
+```bash
+circup install qmc5883l adafruit_vl6180x adafruit_pca9685 adafruit_motor
+```
